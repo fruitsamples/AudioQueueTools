@@ -1,4 +1,4 @@
-/*	Copyright © 2007 Apple Inc. All Rights Reserved.
+/*	Copyright ï¿½ 2007 Apple Inc. All Rights Reserved.
 	
 	Disclaimer: IMPORTANT:  This Apple software is supplied to you by 
 			Apple Inc. ("Apple") in consideration of your agreement to the
@@ -157,12 +157,16 @@ static Boolean MyFileFormatRequiresBigEndian(AudioFileTypeID audioFileType, int 
 	AudioStreamBasicDescription *formats = (AudioStreamBasicDescription *)malloc(propertySize);
 	err = AudioFileGetGlobalInfo(kAudioFileGlobalInfo_AvailableStreamDescriptionsForFormat, sizeof(ftf), &ftf, &propertySize, formats);
 	requiresBigEndian = TRUE;
-	int i, nFormats = propertySize / sizeof(AudioStreamBasicDescription);
-	for (i = 0; i < nFormats; ++i) {
-		if (formats[i].mBitsPerChannel == bitdepth
-		&& !(formats[i].mFormatFlags & kLinearPCMFormatFlagIsBigEndian))
-			return FALSE;
-	}
+    if (err == noErr) {
+        int i, nFormats = propertySize / sizeof(AudioStreamBasicDescription);
+        for (i = 0; i < nFormats; ++i) {
+            if (formats[i].mBitsPerChannel == bitdepth
+                && !(formats[i].mFormatFlags & kLinearPCMFormatFlagIsBigEndian)) {
+                requiresBigEndian = FALSE;
+                break;
+            }
+        }
+    }
 	free(formats);
 	return requiresBigEndian;
 }
@@ -235,12 +239,16 @@ static void MyCopyEncoderCookieToFile(AudioQueueRef theQueue, AudioFileID theFil
 			XThrowIfError(AudioQueueGetProperty(theQueue, kAudioConverterCompressionMagicCookie, magicCookie,
 				&propertySize), "get audio converter's magic cookie");
 			// now set the magic cookie on the output file
-			err = AudioFileSetProperty(theFile, kAudioFilePropertyMagicCookieData, propertySize, magicCookie);
+            // even though some formats have cookies, some files don't take them, so we ignore the error
+			/*err =*/ AudioFileSetProperty(theFile, kAudioFilePropertyMagicCookieData, propertySize, magicCookie);
 		} 
 		catch (CAXException e) {
 			char buf[256];
 			fprintf(stderr, "MyCopyEncoderCookieToFile: %s (%s)\n", e.mOperation, e.FormatError(buf));
 		}
+        catch (...) {
+            fprintf(stderr, "MyCopyEncoderCookieToFile: Unexpected exception\n");
+        }
 		free(magicCookie);
 	}
 }
@@ -327,6 +335,7 @@ int	main(int argc, const char *argv[])
 	MyRecorder aqr;
 	UInt32 size;
 	CFURLRef url;
+    OSStatus err = noErr;
 	
 	// fill structures with 0/NULL
 	memset(&recordFormat, 0, sizeof(recordFormat));
@@ -418,11 +427,14 @@ int	main(int argc, const char *argv[])
 
 		// convert recordFileName from C string to CFURL
 		url = CFURLCreateFromFileSystemRepresentation(NULL, (Byte *)recordFileName, strlen(recordFileName), FALSE);
-		
+		XThrowIfError(!url, "couldn't create record file");
+        
 		// create the audio file
-		XThrowIfError(AudioFileCreateWithURL(url, audioFileType, &recordFormat, kAudioFileFlags_EraseFile,
-			&aqr.recordFile), "AudioFileCreateWithURL failed");
-		CFRelease(url);
+        err = AudioFileCreateWithURL(url, audioFileType, &recordFormat, kAudioFileFlags_EraseFile,
+                                              &aqr.recordFile);
+        CFRelease(url); // release first, and then bail out on error
+		XThrowIfError(err, "AudioFileCreateWithURL failed");
+		
 
 		// copy the cookie first to give the file object as much info as we can about the data going in
 		MyCopyEncoderCookieToFile(aqr.queue, aqr.recordFile);

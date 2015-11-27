@@ -1,4 +1,4 @@
-/*	Copyright © 2007 Apple Inc. All Rights Reserved.
+/*	Copyright ï¿½ 2007 Apple Inc. All Rights Reserved.
 	
 	Disclaimer: IMPORTANT:  This Apple software is supplied to you by 
 			Apple Inc. ("Apple") in consideration of your agreement to the
@@ -195,6 +195,7 @@ int main (int argc, const char * argv[])
 	
 	printf ("Rendering file: %s to %s\n", inputPath, outputPath);
 	
+    AudioChannelLayout *acl = NULL;
 	try {
 		AQTestInfo myInfo;
 		myInfo.mDone = false;
@@ -256,7 +257,6 @@ int main (int argc, const char * argv[])
 
 		// channel layout?
 		OSStatus err = AudioFileGetPropertyInfo(myInfo.mAudioFile, kAudioFilePropertyChannelLayout, &size, NULL);
-		AudioChannelLayout *acl = NULL;
 		if (err == noErr && size > 0) {
 			acl = (AudioChannelLayout *)malloc(size);
 			XThrowIfError(AudioFileGetProperty(myInfo.mAudioFile, kAudioFilePropertyChannelLayout, &size, acl), "get audio file's channel layout");
@@ -286,7 +286,11 @@ int main (int argc, const char * argv[])
 		
 		// create the capture file
 		CFURLRef url = CFURLCreateFromFileSystemRepresentation(NULL, (Byte *)outputPath, strlen(outputPath), false);
-		XThrowIfError(ExtAudioFileCreateWithURL(url, kAudioFileCAFType, &dstFormat, acl, kAudioFileFlags_EraseFile, &captureFile), "ExtAudioFileCreateWithURL");
+        XThrowIfError (!url, "can't create capture file");
+		result = ExtAudioFileCreateWithURL(url, kAudioFileCAFType, &dstFormat, acl, kAudioFileFlags_EraseFile, &captureFile);
+        CFRelease (url);
+		XThrowIfError(result, "ExtAudioFileCreateWithURL failed");
+        
 		// set the capture file's client format to be the canonical format from the queue
 		XThrowIfError(ExtAudioFileSetProperty(captureFile, kExtAudioFileProperty_ClientDataFormat, sizeof(AudioStreamBasicDescription), &captureFormat), "set ExtAudioFile client format");
 		
@@ -325,7 +329,7 @@ int main (int argc, const char * argv[])
 			captureABL.mBuffers[0].mData = captureBuffer->mAudioData;
 			captureABL.mBuffers[0].mDataByteSize = captureBuffer->mAudioDataByteSize;
 			UInt32 writeFrames = captureABL.mBuffers[0].mDataByteSize / captureFormat.mBytesPerFrame;
-			printf("t = %.f: AudioQueueOfflineRender:  req %d fr/%d bytes, got %d fr/%d bytes\n", ts.mSampleTime, (int)reqFrames, (int)captureBufferByteSize, writeFrames, (int)captureABL.mBuffers[0].mDataByteSize);
+			printf("t = %.f: AudioQueueOfflineRender:  req %d fr/%d bytes, got %d fr/%d bytes\n", ts.mSampleTime, (int)reqFrames, (int)captureBufferByteSize, (int)writeFrames, (int)captureABL.mBuffers[0].mDataByteSize);
 			if (writeFrames == 0) break;
 			XThrowIfError(ExtAudioFileWrite(captureFile, writeFrames, &captureABL), "ExtAudioFileWrite");
 			if (myInfo.mFlushed) break;
@@ -340,14 +344,17 @@ int main (int argc, const char * argv[])
 		XThrowIfError(ExtAudioFileDispose(captureFile), "ExtAudioFileDispose failed");
 
 		delete [] myInfo.mPacketDescs;
-		free(acl);
 	}
 	catch (CAXException e) {
 		char buf[256];
 		fprintf(stderr, "Error: %s (%s)\n", e.mOperation, e.FormatError(buf));
 	}
-
-	
+    catch (...) {
+        fprintf(stderr, "Error: Unexpected exception\n");
+    }
+    
+    free(acl); // free channel layout buffer
+    	
     return 0;
 }
 

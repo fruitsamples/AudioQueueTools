@@ -8,12 +8,12 @@ The AudioQueueTools project contains three targets for playing, recording, and r
 ===========================================================================
 BUILD REQUIREMENTS:
 
-Mac OS X v10.6 or later
+Mac OS X v10.7 or later
 
 ===========================================================================
 RUNTIME REQUIREMENTS:
 
-Mac OS X v10.6 or later
+Mac OS X v10.7 or later
 
 ===========================================================================
 PACKAGING LIST:
